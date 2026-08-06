@@ -11,6 +11,8 @@ let package = Package(
             name: "YamatoAI",
             targets: ["YamatoAI"]
         ),
+        
+          
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -18,6 +20,8 @@ let package = Package(
         .target(
             name: "YamatoAI"
         ),
+        
+          
         .testTarget(
             name: "YamatoAITests",
             dependencies: ["YamatoAI"]
