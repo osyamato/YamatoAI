@@ -4,7 +4,7 @@ struct Attention {
     
     func calculate(
         
-        embedding: EmbeddingVector,
+        embeddings: [EmbeddingVector],
         
         wq: Matrix,
         
@@ -12,66 +12,75 @@ struct Attention {
         
         wv: Matrix
         
-    ) -> EmbeddingVector {
+    ) -> [EmbeddingVector] {
+        
+        var results: [EmbeddingVector] = []
+
+        var queries: [EmbeddingVector] = []
+        var keys: [EmbeddingVector] = []
+        var values: [EmbeddingVector] = []
         
         
+
+        for embedding in embeddings {
+
+            let query = Query().make(
+                from: embedding,
+                using: wq
+            )
+
+            queries.append(query)
+
+            let key = Key().make(
+                from: embedding,
+                using: wk
+            )
+
+            keys.append(key)
+
+            let value = Value().make(
+                from: embedding,
+                using: wv
+            )
+
+            values.append(value)
+        }
         
-        let query = Query().make(
+        for query in queries {
+
+            var scores: [Float] = []
+
+            for key in keys {
+
+                let score = DotProduct().calculate(
+
+                    between: query,
+
+                    and: key
+
+                )
+
+                scores.append(score)
+
+            }
+
+            let probabilities = Softmax().calculate(
+
+                scores: scores
+
+            )
             
-            from: embedding,
-            
-            using: wq
-            
-        )
-        let key = Key().make(
-            
-            from: embedding,
-            
-            using: wk
-            
-        )
-        let value = Value().make(
-            
-            from: embedding,
-            
-            using: wv
-            
-        )
-        
-        let score = DotProduct().calculate(
+            let contextVector = WeightedValue().calculate(
 
-            between: query,
+                probabilities: probabilities,
 
-            and: key
+                values: values
 
-        )
-        
-        
-        
-        let scores = [
+            )
 
-            score
+            results.append(contextVector)
 
-        ]
-        
-        let probabilities = Softmax().calculate(
-
-            scores: scores
-
-        )
-        
-        let weightedValue = WeightedValue().calculate(
-
-            probability: probabilities[0],
-
-            value: value
-
-        )
-        
-        return weightedValue
+        }
+        return results
     }
-    
-    
-    
 }
-

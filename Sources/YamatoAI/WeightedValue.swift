@@ -4,27 +4,39 @@ struct WeightedValue {
 
     func calculate(
 
-        probability: Float,
+        probabilities: [Float],
 
-        value: EmbeddingVector
+        values: [EmbeddingVector]
 
     ) -> EmbeddingVector {
 
-        var weightedValues: [Float] = []
+        var contextValues = Array(
 
-        for index in value.values.indices {
+            repeating: Float(0),
 
-            let weightedValue =
+            count: values[0].values.count
 
-                probability * value.values[index]
+        )
+        
+        for valueIndex in values.indices {
 
-            weightedValues.append(weightedValue)
+            for dimensionIndex in values[valueIndex].values.indices {
+
+                contextValues[dimensionIndex] +=
+
+                    probabilities[valueIndex]
+
+                    *
+
+                    values[valueIndex].values[dimensionIndex]
+
+            }
 
         }
 
         return EmbeddingVector(
 
-            values: weightedValues
+            values: contextValues
 
         )
 
