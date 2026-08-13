@@ -52,4 +52,27 @@ struct Vocabulary {
         }
         
     }
+    func word(
+
+        for id: Int
+
+    ) -> String? {
+
+        guard id >= 0,
+              id < idToWord.count else {
+
+            return nil
+        }
+
+        return idToWord[id]
+    }
+
+    func id(
+
+        for word: String
+
+    ) -> Int? {
+
+        return wordToID[word]
+    }
 }
