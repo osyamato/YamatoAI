@@ -6281,4 +6281,683 @@ final class YamatoAITests: XCTestCase {
                 .values
         )
     }
+    func testTrainerLearnsWithTransformer() {
+
+        // =====================================
+        // MultiHeadAttention Factory
+        // =====================================
+
+        func makeMultiHeadAttention()
+            -> MultiHeadAttention {
+
+            let head0 =
+                MultiHead(
+
+                    wq: Matrix(values: [
+                        [0.4, 0.2],
+                        [0.1, 0.5]
+                    ]),
+
+                    wk: Matrix(values: [
+                        [0.3, 0.1],
+                        [0.2, 0.6]
+                    ]),
+
+                    wv: Matrix(values: [
+                        [0.5, 0.2],
+                        [0.1, 0.4]
+                    ])
+                )
+
+
+            let head1 =
+                MultiHead(
+
+                    wq: Matrix(values: [
+                        [0.2, 0.3],
+                        [0.6, 0.1]
+                    ]),
+
+                    wk: Matrix(values: [
+                        [0.4, 0.2],
+                        [0.1, 0.5]
+                    ]),
+
+                    wv: Matrix(values: [
+                        [0.3, 0.6],
+                        [0.2, 0.4]
+                    ])
+                )
+
+
+            return MultiHeadAttention(
+
+                heads: [
+                    head0,
+                    head1
+                ],
+
+                wo: Matrix(values: [
+                    [0.2, 0.1],
+                    [0.3, 0.4],
+                    [0.5, 0.2],
+                    [0.1, 0.6]
+                ])
+            )
+        }
+
+
+        // =====================================
+        // FeedForward Factory
+        //
+        // 2 → 3 → 2
+        // =====================================
+
+        func makeFeedForward()
+            -> FeedForward {
+
+            FeedForward(
+
+                w1: Matrix(values: [
+                    [0.2, 0.4, 0.1],
+                    [0.3, 0.5, 0.2]
+                ]),
+
+                w2: Matrix(values: [
+                    [0.3, 0.2],
+                    [0.4, 0.1],
+                    [0.5, 0.6]
+                ])
+            )
+        }
+
+
+        // =====================================
+        // Transformer
+        //
+        // 2 Blocks
+        // =====================================
+
+        var transformer =
+            Transformer(
+
+                blocks: [
+
+                    TransformerBlock(
+
+                        multiHeadAttention:
+                            makeMultiHeadAttention(),
+
+                        feedForward:
+                            makeFeedForward()
+                    ),
+
+                    TransformerBlock(
+
+                        multiHeadAttention:
+                            makeMultiHeadAttention(),
+
+                        feedForward:
+                            makeFeedForward()
+                    )
+                ]
+            )
+
+
+        // =====================================
+        // OutputLayer
+        //
+        // 2 → 3
+        // =====================================
+
+        var outputLayer =
+            OutputLayer(
+
+                weight: Matrix(values: [
+                    [0.2, 0.1, 0.3],
+                    [0.4, 0.5, 0.2]
+                ])
+            )
+
+
+        // =====================================
+        // Input
+        // =====================================
+
+        let embeddings = [
+
+            EmbeddingVector(
+                values: [0.2, 0.7]
+            ),
+
+            EmbeddingVector(
+                values: [0.6, 0.1]
+            )
+        ]
+
+
+        // =====================================
+        // Correct Token
+        // =====================================
+
+        let correctTokenID = 1
+
+
+        // =====================================
+        // Trainer
+        // =====================================
+
+        let trainer =
+            Trainer(
+
+                learningRate: 0.01
+
+            )
+
+
+        // =====================================
+        // Probability Helper
+        // =====================================
+
+        func calculateProbability(
+
+            transformer: Transformer,
+
+            outputLayer: OutputLayer
+
+        ) -> Float {
+
+            let outputs =
+                transformer.calculate(
+
+                    embeddings:
+                        embeddings
+
+                )
+
+
+            guard let lastOutput =
+                    outputs.last else {
+
+                XCTFail(
+                    "Transformer output is empty"
+                )
+
+                return 0
+            }
+
+
+            let output =
+                outputLayer.calculate(
+
+                    vector:
+                        lastOutput
+
+                )
+
+
+            let probabilities =
+                Softmax().calculate(
+
+                    scores:
+                        output.values
+
+                )
+
+
+            guard correctTokenID >= 0,
+                  correctTokenID < probabilities.count else {
+
+                XCTFail(
+                    "Correct token ID is out of range"
+                )
+
+                return 0
+            }
+
+
+            return probabilities[
+                correctTokenID
+            ]
+        }
+
+
+        // =====================================
+        // Loss Helper
+        // =====================================
+
+        func calculateLoss(
+
+            transformer: Transformer,
+
+            outputLayer: OutputLayer
+
+        ) -> Float {
+
+            let outputs =
+                transformer.calculate(
+
+                    embeddings:
+                        embeddings
+
+                )
+
+
+            guard let lastOutput =
+                    outputs.last else {
+
+                XCTFail(
+                    "Transformer output is empty"
+                )
+
+                return .infinity
+            }
+
+
+            let output =
+                outputLayer.calculate(
+
+                    vector:
+                        lastOutput
+
+                )
+
+
+            let probabilities =
+                Softmax().calculate(
+
+                    scores:
+                        output.values
+
+                )
+
+
+            return CrossEntropyLoss().calculate(
+
+                probabilities:
+                    probabilities,
+
+                correctTokenID:
+                    correctTokenID
+
+            )
+        }
+
+
+        // =====================================
+        // 学習前
+        // =====================================
+
+        let lossBefore =
+            calculateLoss(
+
+                transformer:
+                    transformer,
+
+                outputLayer:
+                    outputLayer
+
+            )
+
+
+        let probabilityBefore =
+            calculateProbability(
+
+                transformer:
+                    transformer,
+
+                outputLayer:
+                    outputLayer
+
+            )
+
+
+        // =====================================
+        // Update前 Weight 保存
+        // =====================================
+
+        let oldOutputWeight =
+            outputLayer
+                .weight
+                .values
+
+
+        let oldBlock0W1 =
+            transformer
+                .blocks[0]
+                .feedForward
+                .w1
+                .values
+
+
+        let oldBlock1W1 =
+            transformer
+                .blocks[1]
+                .feedForward
+                .w1
+                .values
+
+
+        let oldBlock0Wo =
+            transformer
+                .blocks[0]
+                .multiHeadAttention
+                .wo
+                .values
+
+
+        let oldBlock1Wo =
+            transformer
+                .blocks[1]
+                .multiHeadAttention
+                .wo
+                .values
+
+
+        // =====================================
+        // Training
+        // =====================================
+
+        let trainingCount = 500
+
+
+        for _ in 0..<trainingCount {
+
+            trainer.train(
+
+                embeddings:
+                    embeddings,
+
+                correctTokenID:
+                    correctTokenID,
+
+                transformer:
+                    &transformer,
+
+                outputLayer:
+                    &outputLayer
+
+            )
+        }
+
+
+        // =====================================
+        // 学習後
+        // =====================================
+
+        let lossAfter =
+            calculateLoss(
+
+                transformer:
+                    transformer,
+
+                outputLayer:
+                    outputLayer
+
+            )
+
+
+        let probabilityAfter =
+            calculateProbability(
+
+                transformer:
+                    transformer,
+
+                outputLayer:
+                    outputLayer
+
+            )
+
+
+        // =====================================
+        // Finite Check
+        // =====================================
+
+        XCTAssertTrue(
+            lossBefore.isFinite
+        )
+
+
+        XCTAssertTrue(
+            lossAfter.isFinite
+        )
+
+
+        XCTAssertTrue(
+            probabilityBefore.isFinite
+        )
+
+
+        XCTAssertTrue(
+            probabilityAfter.isFinite
+        )
+
+
+        // =====================================
+        // Probability Range
+        // =====================================
+
+        XCTAssertGreaterThanOrEqual(
+            probabilityBefore,
+            0
+        )
+
+
+        XCTAssertLessThanOrEqual(
+            probabilityBefore,
+            1
+        )
+
+
+        XCTAssertGreaterThanOrEqual(
+            probabilityAfter,
+            0
+        )
+
+
+        XCTAssertLessThanOrEqual(
+            probabilityAfter,
+            1
+        )
+
+
+        // =====================================
+        // OutputLayer Update確認
+        //
+        // OutputLayerには十分大きなGradientが
+        // 到達するため、実際のWeight変化を確認
+        // =====================================
+
+        XCTAssertNotEqual(
+
+            oldOutputWeight,
+
+            outputLayer
+                .weight
+                .values,
+
+            "OutputLayer weight was not updated."
+        )
+
+
+        // =====================================
+        // ★ 本命 1
+        //
+        // Lossが下がったか
+        // =====================================
+
+        XCTAssertLessThan(
+
+            lossAfter,
+
+            lossBefore,
+
+            """
+            Transformer training did not reduce loss.
+            Before: \(lossBefore)
+            After: \(lossAfter)
+            """
+        )
+
+
+        // =====================================
+        // ★ 本命 2
+        //
+        // 正解Token確率が上がったか
+        // =====================================
+
+        XCTAssertGreaterThan(
+
+            probabilityAfter,
+
+            probabilityBefore,
+
+            """
+            Correct token probability did not increase.
+            Before: \(probabilityBefore)
+            After: \(probabilityAfter)
+            """
+        )
+
+
+        // =====================================
+        // ★ 本命 3
+        //
+        // 十分に学習できたか
+        //
+        // 今回の固定データでは
+        // 500回後にかなり高い確率まで
+        // 到達できることを確認
+        // =====================================
+
+        XCTAssertGreaterThan(
+
+            probabilityAfter,
+
+            0.8,
+
+            """
+            Correct token probability is still too low.
+            Probability: \(probabilityAfter)
+            """
+        )
+
+
+        // =====================================
+        // Debug
+        // =====================================
+
+        print(
+            "===== Trainer + Transformer ====="
+        )
+
+
+        print(
+            "Training Count:",
+            trainingCount
+        )
+
+
+        print(
+            "Loss before:",
+            lossBefore
+        )
+
+
+        print(
+            "Loss after:",
+            lossAfter
+        )
+
+
+        print(
+            "Correct Token Probability before:",
+            probabilityBefore
+        )
+
+
+        print(
+            "Correct Token Probability after:",
+            probabilityAfter
+        )
+
+
+        print(
+            "Output Weight before:",
+            oldOutputWeight
+        )
+
+
+        print(
+            "Output Weight after:",
+            outputLayer
+                .weight
+                .values
+        )
+
+
+        print(
+            "Block 0 W1 before:",
+            oldBlock0W1
+        )
+
+
+        print(
+            "Block 0 W1 after:",
+            transformer
+                .blocks[0]
+                .feedForward
+                .w1
+                .values
+        )
+
+
+        print(
+            "Block 1 W1 before:",
+            oldBlock1W1
+        )
+
+
+        print(
+            "Block 1 W1 after:",
+            transformer
+                .blocks[1]
+                .feedForward
+                .w1
+                .values
+        )
+
+
+        print(
+            "Block 0 Wo before:",
+            oldBlock0Wo
+        )
+
+
+        print(
+            "Block 0 Wo after:",
+            transformer
+                .blocks[0]
+                .multiHeadAttention
+                .wo
+                .values
+        )
+
+
+        print(
+            "Block 1 Wo before:",
+            oldBlock1Wo
+        )
+
+
+        print(
+            "Block 1 Wo after:",
+            transformer
+                .blocks[1]
+                .multiHeadAttention
+                .wo
+                .values
+        )
+    }
+   
 }
